@@ -1,0 +1,188 @@
+---
+title: "Using ARCHS4 v2.5 to get all SRA bulkRNAseq datasets about macrophages and DCs"
+author: "Marion Hardy"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true 
+    theme: spacelab 
+    highlight: monochrome
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, cache = TRUE, echo = TRUE, warning = F, cache.lazy = F)
+knitr::opts_chunk$set(fig.width=10, fig.height=7) 
+
+library(RColorBrewer)
+library(tidyverse)
+library(rhdf5)
+library(kableExtra)
+
+dir = getwd()
+
+```
+
+```{r}
+
+# Check for ARCHS4 data set and download if file not present
+# Code sourced from ARCHS4 tutorial at: https://maayanlab.cloud/archs4/help.html
+
+destination_file = "./data/human_gene_v2.5.h5" # Downloaded on 19th December 2024
+extracted_expression_file = "macrophage_expression_matrix.tsv"
+url = "https://s3.dev.maayanlab.cloud/archs4/files/human_gene_v2.5.h5" 
+
+# Check if gene expression file was already downloaded, 
+# if not in current directory download file form repository
+
+if(!file.exists(destination_file)){
+  print("Downloading compressed gene expression matrix.")
+  download.file(url, destination_file, quiet = FALSE, mode = 'wb') # be careful this is 45GB
+}
+
+# Retrieve information from compressed data
+metadata = as.data.frame(h5read(destination_file, 'meta/samples'))
+
+# Isolate useful columns
+row.names(metadata) = metadata$geo_accession
+metadata = metadata[, c(2,9:12,17,18,22:25,29)]
+
+# if you ever need to see the h5 object's structure, use
+# h5ls("./data/human_gene_v2.5.h5")
+
+```
+
+# Introduction
+
+## Context
+
+I want to verify is macrophages in human and mouse and different organs express MHC class ii molecules.
+I hypothesize that this makes them DC-like. In other words I hypothesize that DCs are the same cell type as macrophages, just a part of the macrophage function spectrum.
+
+Thank to Timothy Smyth's GitHub and their publication in Nature in November https://www.nature.com/articles/s41598-024-78000-6, I'll be leveraging the dataset in a similar fashion.
+
+## Data filtering
+
+```{r, echo=TRUE}
+
+# Create ID column for manipulation
+
+metadata$ID = NA
+metadata = metadata %>% select(ID, everything()) #reorder columns
+metadata = as.data.frame(metadata)
+
+# Try to capture samples of interest
+
+target = c("acrophage", "MDM","onocyte","THP1","MoDC","endritic","myeloid DC","mDC") # Case sensitive! So omitted the first letter
+
+for(i in 1:length(target)){
+  x = target[i]
+  if(i<5){ # adjust i to get only the macrophage-related terms in target
+    metadata = 
+      metadata %>% 
+      mutate(ID = case_when(str_detect(characteristics_ch1, x) | 
+                              str_detect(source_name_ch1, x) |
+                              str_detect(series_id, x) ~ 'Macrophage', 
+                            TRUE ~ as.character(.$ID))) 
+    print(table(metadata$ID))
+    } else {
+      metadata = 
+        metadata %>% 
+        mutate(ID =
+                 case_when(str_detect(characteristics_ch1, x) | 
+                             str_detect(source_name_ch1, x) |
+                             str_detect(series_id, x) ~ 'DC', 
+                           TRUE ~ as.character(.$ID)))
+      print(table(metadata$ID))
+    }
+  data = metadata %>% filter(ID %in% c("Macrophage","DC"))
+   }
+
+# Some samples get renamed as DCs even though they also have macrophages and vice versa.
+# about 4394 DCs also have macrophages in there
+# is it a problem? Yes. Can it be solved quickly? No. I'll just keep it in mind
+
+```
+
+## THP1 AML and DC with classical polarization signals
+
+```{r}
+
+# Narrow down the sample i want to capture
+# Make multiple useful datasets
+# THP1, other AML cell lines and human primary cells, no treatment besides classical polarization
+
+keep_line = c("MDM","iPSC","IPS","THP1","U937","U-937","RAW." ,"onoMac","endritic","DC")
+keep_treatment = c("DMSO","vehicle","IL4","IL-4","IL13","IL-13","IL10","IL-10","IFN","nterferon",
+                   "LPS","saccharide","oly I:C","PMA","GM-CSF","M-CSF","M1","M2","nstimulated")
+discard = c("sarcoma","IFNa","GSE134874","GSE201958","-beta","IFNb","cocultured","HMW","cGAMP",
+            "GYY","E.Coli",".Coli","E. coli","theta","microglia","dendrimer","Atripla","Triumeq","Zymosan","SeV",
+            "CoCu","IFNÎ","CH223191","ectopic","knock-in","LPS + A","shRNA","Temsirolimus","C5a","Â",
+            "DTRIM24","GSE143844","U251MG","K562","HDM201","FABP","MDa5 KD","Z-VAD","RFX1","MoDC_GMIL4",
+            "IFNAR1","IFNAR2","H37Ra infection","MDA-MB","IRF1-/-","RP11-184M15.1","Liver tumor",
+            "ATRA", "Bystander","treatment: TDM","treatment: SL-1","treatment: manLAM","treatment: PIM6",
+            "H37Rv","treatment: Infected","M2CoA","pretreatment: VGN73","treatment: CBD","Al-CPI",
+            "LPS + ABF")
+
+
+dataset1 = 
+  data %>% 
+  filter(str_detect(characteristics_ch1, paste(keep_line, collapse = "|"))) %>% # 8135 samples
+  filter(str_detect(characteristics_ch1, paste(keep_treatment, collapse = "|"))) %>%  # 1120 samples
+  filter(!str_detect(characteristics_ch1, paste(discard, collapse = "|"))) # 577 samples
+
+# Retrieve information from compressed data
+
+samples = h5read(destination_file, "meta/samples/geo_accession")
+genes = h5read(destination_file, "meta/genes/ensembl_gene")
+
+# Identify columns to be extracted
+sample_locations = which(samples %in% rownames(dataset1))
+
+# extract gene expression from compressed data
+expression = t(h5read(destination_file, 
+                      "data/expression", 
+                      index = list(sample_locations, 
+                                   1:length(genes))))
+
+H5close()
+
+rownames(expression) = genes
+colnames(expression) = samples[sample_locations]
+
+dataset1 %>%
+  as_tibble() %>%
+  knitr::kable()%>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% 
+  scroll_box(width = "1000px", height = "500px")
+
+
+# Save file
+write.csv(expression,  file = "./data_output/counts_AML_THP1_DC_M0_M1_M2.csv")
+saveRDS(expression, "./data_output/counts_AML_THP1_DC_M0_M1_M2.Rds")
+
+# Save the metadata
+write.csv(dataset1, file = "./data_output/metadata_raw_AML_THP1_DC_M0_M1_M2.csv")
+
+```
+
+
+```{r}
+
+# Cleaning up the metadata
+# It's going to be tedious so I will go through it with excel because
+# it needs to be curated by hand, string searching is not enough
+# and I have to look up papers for treatment lengths
+
+```
+
+
+```{r}
+sessionInfo()
+```
+
+
+
