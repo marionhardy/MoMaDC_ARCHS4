@@ -55,16 +55,14 @@ metadata = metadata[, c(2,9:12,17,18,22:25,29)]
 
 ```
 
-# Introduction
-
-## Context
+# Context
 
 I want to verify is macrophages in human and mouse and different organs express MHC class ii molecules.
 I hypothesize that this makes them DC-like. In other words I hypothesize that DCs are the same cell type as macrophages, just a part of the macrophage function spectrum.
 
 Thank to Timothy Smyth's GitHub and their publication in Nature in November https://www.nature.com/articles/s41598-024-78000-6, I'll be leveraging the dataset in a similar fashion.
 
-## Data filtering
+# Data filtering
 
 ```{r, echo=TRUE}
 
@@ -107,7 +105,7 @@ for(i in 1:length(target)){
 
 ```
 
-## THP1 AML and DC with classical polarization signals
+# THP1 AML and DC with classical polarization signals
 
 ```{r}
 
@@ -135,7 +133,6 @@ dataset1 =
   filter(!str_detect(characteristics_ch1, paste(discard, collapse = "|"))) # 577 samples
 
 # Retrieve information from compressed data
-
 samples = h5read(destination_file, "meta/samples/geo_accession")
 genes = h5read(destination_file, "meta/genes/ensembl_gene")
 
@@ -153,19 +150,12 @@ H5close()
 rownames(expression) = genes
 colnames(expression) = samples[sample_locations]
 
-dataset1 %>%
-  as_tibble() %>%
-  knitr::kable()%>% 
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% 
-  scroll_box(width = "1000px", height = "500px")
-
-
 # Save file
-write.csv(expression,  file = "./data_output/counts_AML_THP1_DC_M0_M1_M2.csv")
-saveRDS(expression, "./data_output/counts_AML_THP1_DC_M0_M1_M2.Rds")
+# write.csv(expression,  file = "./data_output/counts_AML_THP1_DC_M0_M1_M2.csv")
+# saveRDS(expression, "./data_output/counts_AML_THP1_DC_M0_M1_M2.Rds")
 
 # Save the metadata
-write.csv(dataset1, file = "./data_output/metadata_raw_AML_THP1_DC_M0_M1_M2.csv")
+# write.csv(dataset1, file = "./data_output/metadata_raw_AML_THP1_DC_M0_M1_M2.csv")
 
 ```
 
@@ -176,6 +166,45 @@ write.csv(dataset1, file = "./data_output/metadata_raw_AML_THP1_DC_M0_M1_M2.csv"
 # It's going to be tedious so I will go through it with excel because
 # it needs to be curated by hand, string searching is not enough
 # and I have to look up papers for treatment lengths
+
+# access it here : https://github.com/marionhardy/MoMaDC_ARCHS4
+```
+
+# Let's explore the dataset
+
+```{r}
+
+coldata = read.csv("./data_output/metadata_AML_THP1_DC_M0_M1_M2.csv")
+
+```
+
+```{r}
+
+length(unique(coldata$series_id))
+table(coldata$series_id)
+
+```
+
+
+```{r}
+
+table(coldata$ID)
+
+table(coldata$source_name)
+length(unique(coldata$source_name))
+
+table(coldata$expected_subtype)
+length(unique(coldata$expected_subtype))
+
+```
+
+```{r}
+
+length(unique(coldata$treatment))
+table(coldata$treatment)
+
+length(unique(coldata$length_treatment))
+table(coldata$length_treatment)
 
 ```
 
